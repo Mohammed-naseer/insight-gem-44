@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
-import { kpis, sentimentTrend, sentimentDistribution, aspectAnalysis, recentReviews, activity } from "@/lib/mock-data";
+import { kpis, sentimentTrend, sentimentDistribution, aspectAnalysis, recentReviews } from "@/lib/mock-data";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown } from "lucide-react";
@@ -108,15 +109,11 @@ function Page() {
             </div>
           </div>
           <div className="p-6 rounded-xl bg-card ring-1 ring-border">
-            <h3 className="font-semibold tracking-tight mb-4">Recent activity</h3>
-            <ol className="space-y-4">
-              {activity.map((a) => (
-                <li key={a.time + a.event} className="flex gap-3 text-sm">
-                  <span className="font-mono text-[11px] text-muted-foreground pt-0.5 shrink-0 w-10">{a.time}</span>
-                  <span className="flex-1">{a.event}</span>
-                </li>
-              ))}
-            </ol>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold tracking-tight">Activity timeline</h3>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Live</span>
+            </div>
+            <ActivityFeed limit={8} />
           </div>
         </div>
 
