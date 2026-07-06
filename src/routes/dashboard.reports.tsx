@@ -52,7 +52,7 @@ function slug(s: string) {
 
 function Page() {
   const handleExport = (report: Report, format: "pdf" | "csv" | "print") => {
-    const { rows, summary, title } = buildRows(report.kind);
+    const { rows, summary } = buildRows(report.kind);
     const base = `${slug(report.name)}`;
     if (format === "pdf") {
       downloadPDF(`${base}.pdf`, `${report.name}`, rows, summary);
