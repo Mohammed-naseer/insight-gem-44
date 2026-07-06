@@ -66,7 +66,7 @@ function analyze(text: string): Result {
 
 function Page() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const { register, handleSubmit, reset, setValue } = useForm<FormData>({
+  const { register, handleSubmit, reset } = useForm<FormData>({
     defaultValues: { text: "The new titanium chassis feels incredible, but the software still hangs when uploading 4K timelines. Support was fast but the issue persists.", product: "Enterprise Plan", category: "SaaS" },
   });
   const [result, setResult] = useState<Result | null>(null);
