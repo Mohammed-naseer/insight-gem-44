@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type ActivityKind = "upload" | "analysis" | "export" | "system" | "user" | "alert";
+export type ActivityKind = "upload" | "analysis" | "export" | "system" | "user" | "alert" | "admin";
 
 export type ActivityItem = {
   id: string;
