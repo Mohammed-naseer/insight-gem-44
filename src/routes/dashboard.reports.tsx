@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
-import { FileText, Download, Printer, Sparkles, FileType } from "lucide-react";
+import { FileText, Download, Printer, Sparkles, FileType, RotateCcw, X, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { downloadCSV, downloadPDF, printReport, type ExportRow } from "@/lib/exports";
 import { pushActivity } from "@/lib/activity-store";
 import { sentimentTrend, aspectAnalysis, products } from "@/lib/mock-data";
 import { toast } from "sonner";
+import { removeJob, retryJob, runExport, useExportJobs, type ExportFormat } from "@/lib/export-jobs-store";
+import { useCan } from "@/lib/rbac";
 
 export const Route = createFileRoute("/dashboard/reports")({
   component: Page,
@@ -51,28 +53,45 @@ function slug(s: string) {
 }
 
 function Page() {
-  const handleExport = (report: Report, format: "pdf" | "csv" | "print") => {
+  const jobs = useExportJobs();
+  const canGenerate = useCan("reports:generate");
+
+  const startExport = (name: string, format: ExportFormat, rows: ExportRow[], summary: string) => {
+    const base = slug(name);
+    const finalize = () => {
+      if (format === "pdf") downloadPDF(`${base}.pdf`, name, rows, summary);
+      else if (format === "csv") downloadCSV(`${base}.csv`, rows);
+      else printReport(name, rows, summary);
+      pushActivity({ kind: "export", title: `${name} exported`, detail: format.toUpperCase() });
+    };
+    runExport(name, format, finalize);
+    toast.success(`${format.toUpperCase()} export queued`);
+  };
+
+  const handleExport = (report: Report, format: ExportFormat) => {
     const { rows, summary } = buildRows(report.kind);
-    const base = `${slug(report.name)}`;
-    if (format === "pdf") {
-      downloadPDF(`${base}.pdf`, `${report.name}`, rows, summary);
-      pushActivity({ kind: "export", title: `${report.name} exported`, detail: "PDF" });
-      toast.success("PDF downloaded");
-    } else if (format === "csv") {
-      downloadCSV(`${base}.csv`, rows);
-      pushActivity({ kind: "export", title: `${report.name} exported`, detail: "CSV" });
-      toast.success("CSV downloaded");
-    } else {
-      printReport(report.name, rows, summary);
-      pushActivity({ kind: "export", title: `${report.name} sent to printer` });
-    }
+    startExport(report.name, format, rows, summary);
   };
 
   const generate = (kind: ReportKind, label: string) => {
+    if (!canGenerate) { toast.error("You don't have permission to generate reports"); return; }
     const { rows, summary, title } = buildRows(kind);
-    downloadPDF(`${slug(label)}-${Date.now()}.pdf`, title, rows, summary);
-    pushActivity({ kind: "export", title: `${label} report generated`, detail: "PDF" });
-    toast.success(`${label} report generated`);
+    startExport(`${label} — ${title}`, "pdf", rows, summary);
+  };
+
+  const retry = (id: string) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return;
+    // Look up the matching report to reproduce data.
+    const report = reports.find((r) => job.name.includes(r.name)) ?? reports[0];
+    const { rows, summary } = buildRows(report.kind);
+    const base = slug(job.name);
+    retryJob(id, () => {
+      if (job.format === "pdf") downloadPDF(`${base}.pdf`, job.name, rows, summary);
+      else if (job.format === "csv") downloadCSV(`${base}.csv`, rows);
+      else printReport(job.name, rows, summary);
+      pushActivity({ kind: "export", title: `${job.name} exported`, detail: `${job.format.toUpperCase()} · retry` });
+    });
   };
 
   return (
@@ -88,12 +107,68 @@ function Page() {
             <div key={c.t} className="p-6 rounded-xl bg-card ring-1 ring-border">
               <div className="text-sm font-semibold">{c.t} report</div>
               <p className="text-xs text-muted-foreground mt-1">{c.d}</p>
-              <button onClick={() => generate(c.kind, c.t)} className="mt-4 bg-brand text-white text-sm px-3 py-1.5 rounded-lg font-medium hover:opacity-90 flex items-center gap-1.5">
+              <button
+                onClick={() => generate(c.kind, c.t)}
+                disabled={!canGenerate}
+                title={canGenerate ? "" : "Requires Admin or Analyst role"}
+                className="mt-4 bg-brand text-white text-sm px-3 py-1.5 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
                 <Sparkles className="size-3.5" /> Generate PDF
               </button>
             </div>
           ))}
         </div>
+
+        {jobs.length > 0 && (
+          <div className="p-6 rounded-xl bg-card ring-1 ring-border">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold tracking-tight">Export jobs</h3>
+              <span className="text-xs text-muted-foreground font-mono">{jobs.length} recent</span>
+            </div>
+            <ul className="space-y-3">
+              {jobs.map((j) => (
+                <li key={j.id} className="p-3 rounded-lg ring-1 ring-border bg-background">
+                  <div className="flex items-center gap-3">
+                    <div className={`size-8 rounded-lg grid place-items-center shrink-0 ${
+                      j.status === "done" ? "bg-success/10 text-success"
+                      : j.status === "failed" ? "bg-danger/10 text-danger"
+                      : "bg-brand/10 text-brand"
+                    }`}>
+                      {j.status === "done" ? <CheckCircle2 className="size-4" />
+                        : j.status === "failed" ? <AlertTriangle className="size-4" />
+                        : <Loader2 className="size-4 animate-spin" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{j.name}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span className="uppercase tracking-wider text-[10px] font-mono">{j.format}</span>
+                        <span>·</span>
+                        <span className="capitalize">{j.status}</span>
+                        {j.error && <><span>·</span><span className="text-danger">{j.error}</span></>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {j.status === "failed" && (
+                        <button onClick={() => retry(j.id)} className="text-xs ring-1 ring-border px-2 py-1 rounded hover:bg-muted inline-flex items-center gap-1">
+                          <RotateCcw className="size-3" /> Retry
+                        </button>
+                      )}
+                      <button onClick={() => removeJob(j.id)} className="size-7 grid place-items-center rounded hover:bg-muted" aria-label="Dismiss">
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full transition-all ${j.status === "failed" ? "bg-danger" : j.status === "done" ? "bg-success" : "bg-brand"}`}
+                      style={{ width: `${j.progress}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="p-6 rounded-xl bg-card ring-1 ring-border">
           <div className="flex items-center justify-between mb-4">
