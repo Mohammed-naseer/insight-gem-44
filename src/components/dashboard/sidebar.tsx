@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, MessageSquare, LineChart, Boxes, FileText, Users, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, MessageSquare, LineChart, Boxes, FileText, Users, Settings, LogOut, Activity } from "lucide-react";
 import { Logo } from "@/components/site/logo";
 
 const nav = [
@@ -8,6 +8,7 @@ const nav = [
   { to: "/dashboard/analytics", label: "Analytics", icon: LineChart },
   { to: "/dashboard/products", label: "Products", icon: Boxes },
   { to: "/dashboard/reports", label: "Reports", icon: FileText },
+  { to: "/dashboard/activity", label: "Audit Log", icon: Activity },
   { to: "/dashboard/users", label: "Users", icon: Users },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
