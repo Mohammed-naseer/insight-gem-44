@@ -3,11 +3,13 @@ import { DashboardTopbar } from "@/components/dashboard/topbar";
 import { useForm } from "react-hook-form";
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Upload, Sparkles, RotateCcw, Download, FileSpreadsheet, X } from "lucide-react";
+import { Upload, Sparkles, RotateCcw, Download, FileSpreadsheet, X, History, Play, Eye, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { pushActivity } from "@/lib/activity-store";
 import { downloadCSV, downloadPDF } from "@/lib/exports";
+import { addHistory, removeHistory, updateHistory, useHistory, type HistoryEntry } from "@/lib/analysis-history-store";
+import { relativeTime } from "@/lib/activity-store";
 
 export const Route = createFileRoute("/dashboard/analysis")({
   component: Page,
@@ -74,6 +76,8 @@ function Page() {
   const [batch, setBatch] = useState<BatchRow[] | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   const [uploadName, setUploadName] = useState<string | null>(null);
+  const history = useHistory();
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -85,11 +89,10 @@ function Page() {
     toast.success("Analysis complete");
   };
 
-  const onFile = async (file: File) => {
-    setBatchLoading(true);
-    setUploadName(file.name);
+  const runOnBuffer = async (fileName: string, size: number, buf: ArrayBuffer, historyId?: string) => {
+    const id = historyId ?? addHistory({ fileName, size, rows: [], status: "running" });
+    if (historyId) updateHistory(id, { status: "running", error: undefined, rows: [] });
     try {
-      const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
@@ -102,14 +105,50 @@ function Page() {
         return { text, sentiment: a.sentiment, confidence: Number(a.confidence.toFixed(2)), emotion: a.emotion, keywords: a.keywords.join(", ") };
       });
       setBatch(analyzed);
-      pushActivity({ kind: "upload", title: `${file.name} uploaded`, detail: `${analyzed.length} rows` });
+      updateHistory(id, { status: "complete", rows: analyzed });
+      setActiveHistoryId(id);
+      pushActivity({ kind: "upload", title: `${fileName} uploaded`, detail: `${analyzed.length} rows` });
       pushActivity({ kind: "analysis", title: "Batch analysis completed", detail: `${analyzed.length} reviews` });
       toast.success(`Analyzed ${analyzed.length} reviews`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to parse file";
+      updateHistory(id, { status: "failed", error: msg });
       toast.error(msg);
       setBatch(null);
       setUploadName(null);
+    }
+  };
+
+  const fileBuffers = useRef(new Map<string, ArrayBuffer>());
+
+  const onFile = async (file: File) => {
+    setBatchLoading(true);
+    setUploadName(file.name);
+    try {
+      const buf = await file.arrayBuffer();
+      const id = addHistory({ fileName: file.name, size: file.size, rows: [], status: "running" });
+      fileBuffers.current.set(id, buf);
+      await runOnBuffer(file.name, file.size, buf, id);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const revisit = (h: HistoryEntry) => {
+    if (h.status !== "complete") return;
+    setBatch(h.rows);
+    setUploadName(h.fileName);
+    setActiveHistoryId(h.id);
+    setResult(null);
+  };
+
+  const rerun = async (h: HistoryEntry) => {
+    const buf = fileBuffers.current.get(h.id);
+    if (!buf) { toast.error("Original file no longer available in this session"); return; }
+    setBatchLoading(true);
+    setUploadName(h.fileName);
+    try {
+      await runOnBuffer(h.fileName, h.size, buf, h.id);
     } finally {
       setBatchLoading(false);
     }
@@ -133,7 +172,8 @@ function Page() {
     <>
       <DashboardTopbar title="Review Analysis" />
       <div className="p-6 grid gap-6 lg:grid-cols-5 max-w-[1600px] w-full mx-auto">
-        <form onSubmit={handleSubmit(onSubmit)} className="lg:col-span-2 p-6 rounded-xl bg-card ring-1 ring-border space-y-4 h-fit">
+        <div className="lg:col-span-2 space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="p-6 rounded-xl bg-card ring-1 ring-border space-y-4 h-fit">
           <div>
             <label className="text-xs font-medium text-muted-foreground">Review text</label>
             <textarea {...register("text", { required: true })} rows={8} className="input-field mt-1.5 resize-none" />
@@ -194,6 +234,82 @@ function Page() {
             </div>
           )}
         </form>
+
+        <div className="p-4 rounded-xl bg-card ring-1 ring-border">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <History className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold tracking-tight">Analysis history</h3>
+            </div>
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{history.length} runs</span>
+          </div>
+          {history.length === 0 ? (
+            <div className="py-8 text-center text-xs text-muted-foreground">
+              <FileSpreadsheet className="size-6 mx-auto mb-2 text-muted-foreground/40" />
+              No uploads yet. Drop a CSV or Excel file to get started.
+            </div>
+          ) : (
+            <ul className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {history.map((h) => {
+                const active = h.id === activeHistoryId;
+                return (
+                  <li
+                    key={h.id}
+                    className={`p-2.5 rounded-lg ring-1 transition-colors ${active ? "ring-brand/40 bg-brand/5" : "ring-border bg-background"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`size-6 rounded grid place-items-center shrink-0 ${
+                        h.status === "complete" ? "bg-success/10 text-success"
+                        : h.status === "failed" ? "bg-danger/10 text-danger"
+                        : "bg-brand/10 text-brand"
+                      }`}>
+                        {h.status === "complete" ? <CheckCircle2 className="size-3.5" />
+                          : h.status === "failed" ? <AlertTriangle className="size-3.5" />
+                          : <Loader2 className="size-3.5 animate-spin" />}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate">{h.fileName}</div>
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                          {h.status === "complete" ? `${h.rows.length} rows` : h.status}
+                          {" · "}{relativeTime(h.at)}
+                          {h.error ? ` · ${h.error}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex gap-0.5 shrink-0">
+                        <button
+                          onClick={() => revisit(h)}
+                          disabled={h.status !== "complete"}
+                          className="size-6 grid place-items-center rounded hover:bg-muted disabled:opacity-30"
+                          aria-label="View results"
+                          title="View results"
+                        >
+                          <Eye className="size-3.5" />
+                        </button>
+                        <button
+                          onClick={() => rerun(h)}
+                          disabled={!fileBuffers.current.has(h.id) || batchLoading}
+                          className="size-6 grid place-items-center rounded hover:bg-muted disabled:opacity-30"
+                          aria-label="Rerun"
+                          title={fileBuffers.current.has(h.id) ? "Rerun analysis" : "File unavailable (session-only)"}
+                        >
+                          <Play className="size-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { removeHistory(h.id); fileBuffers.current.delete(h.id); if (activeHistoryId === h.id) setActiveHistoryId(null); }}
+                          className="size-6 grid place-items-center rounded hover:bg-muted"
+                          aria-label="Remove"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        </div>
 
         <div className="lg:col-span-3 space-y-4">
           {!result && !loading && !batch && !batchLoading && (
