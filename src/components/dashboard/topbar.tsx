@@ -1,10 +1,13 @@
-import { Search, Bell, Sun, Moon } from "lucide-react";
+import { Search, Bell, Sun, Moon, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { GlobalSearch } from "@/components/dashboard/global-search";
+import { ROLES, setRole, useRole, type Role } from "@/lib/rbac";
+import { pushActivity } from "@/lib/activity-store";
 
 export function DashboardTopbar({ title }: { title: string }) {
   const [dark, setDark] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const role = useRole();
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
@@ -23,6 +26,22 @@ export function DashboardTopbar({ title }: { title: string }) {
       <div className="h-full px-6 flex items-center gap-4">
         <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
         <div className="ml-auto flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-1.5 h-9 pl-2 pr-1 rounded-lg ring-1 ring-border bg-background text-xs">
+            <ShieldCheck className="size-3.5 text-brand" />
+            <span className="text-muted-foreground">Role</span>
+            <select
+              value={role}
+              onChange={(e) => {
+                const next = e.target.value as Role;
+                setRole(next);
+                pushActivity({ kind: "admin", title: `Session role switched to ${next}` });
+              }}
+              className="bg-transparent outline-none font-medium pr-1"
+              aria-label="Switch active role"
+            >
+              {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
           <button
             onClick={() => setSearchOpen(true)}
             className="hidden md:flex items-center gap-2 h-9 w-80 px-3 rounded-lg ring-1 ring-border bg-background hover:bg-muted/50 text-left text-sm text-muted-foreground transition-colors"
