@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Upload, Sparkles, Download, Bell, User, Settings2, Activity as ActivityIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Upload, Sparkles, Download, Bell, User, Settings2, ShieldCheck, Activity as ActivityIcon, Search, X } from "lucide-react";
 import { useActivity, relativeTime, type ActivityKind } from "@/lib/activity-store";
 
 const iconFor: Record<ActivityKind, typeof Upload> = {
@@ -9,6 +9,7 @@ const iconFor: Record<ActivityKind, typeof Upload> = {
   alert: Bell,
   user: User,
   system: Settings2,
+  admin: ShieldCheck,
 };
 
 const colorFor: Record<ActivityKind, string> = {
@@ -18,16 +19,39 @@ const colorFor: Record<ActivityKind, string> = {
   alert: "text-danger bg-danger/10",
   user: "text-warning bg-warning/10",
   system: "text-muted-foreground bg-muted",
+  admin: "text-brand bg-brand/10",
 };
 
-export function ActivityFeed({ limit }: { limit?: number }) {
+const ALL_KINDS: ActivityKind[] = ["upload", "analysis", "export", "admin", "user", "system", "alert"];
+
+export function ActivityFeed({ limit, searchable = false }: { limit?: number; searchable?: boolean }) {
   const items = useActivity();
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState<Set<ActivityKind>>(new Set(ALL_KINDS));
 
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 500);
     return () => clearTimeout(t);
   }, []);
+
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return items.filter((i) => {
+      if (!active.has(i.kind)) return false;
+      if (!term) return true;
+      return [i.title, i.detail, i.kind].filter(Boolean).some((v) => v!.toLowerCase().includes(term));
+    });
+  }, [items, q, active]);
+
+  const toggleKind = (k: ActivityKind) => {
+    setActive((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
 
   if (loading) {
     return (
@@ -45,19 +69,37 @@ export function ActivityFeed({ limit }: { limit?: number }) {
     );
   }
 
-  const shown = limit ? items.slice(0, limit) : items;
+  const shown = limit ? filtered.slice(0, limit) : filtered;
+
+  const emptyState = (title: string, desc: string) => (
+    <div className="py-10 text-center text-sm text-muted-foreground">
+      <ActivityIcon className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="text-xs mt-1">{desc}</p>
+    </div>
+  );
+
+  if (!items.length) {
+    return searchable ? (
+      <>
+        {renderControls(q, setQ, active, toggleKind)}
+        {emptyState("No activity yet", "Uploads, analyses, exports, and admin actions will appear here.")}
+      </>
+    ) : emptyState("No recent activity", "Uploads, analyses, and exports will appear here.");
+  }
 
   if (!shown.length) {
     return (
-      <div className="py-10 text-center text-sm text-muted-foreground">
-        <ActivityIcon className="size-8 mx-auto mb-2 text-muted-foreground/40" />
-        <p className="font-medium text-foreground">No recent activity</p>
-        <p className="text-xs mt-1">Uploads, analyses, and exports will appear here.</p>
-      </div>
+      <>
+        {searchable && renderControls(q, setQ, active, toggleKind)}
+        {emptyState("No matching events", "Adjust filters or search terms.")}
+      </>
     );
   }
 
   return (
+    <>
+    {searchable && renderControls(q, setQ, active, toggleKind)}
     <ol className="relative">
       {shown.map((a, i) => {
         const Icon = iconFor[a.kind];
@@ -80,5 +122,50 @@ export function ActivityFeed({ limit }: { limit?: number }) {
         );
       })}
     </ol>
+    </>
+  );
+}
+
+function renderControls(
+  q: string,
+  setQ: (v: string) => void,
+  active: Set<ActivityKind>,
+  toggle: (k: ActivityKind) => void,
+) {
+  return (
+    <div className="space-y-3 mb-4">
+      <div className="relative">
+        <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search audit log…"
+          className="input-field pl-9 pr-9"
+        />
+        {q && (
+          <button
+            onClick={() => setQ("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 size-6 grid place-items-center rounded hover:bg-muted"
+            aria-label="Clear"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {ALL_KINDS.map((k) => {
+          const on = active.has(k);
+          return (
+            <button
+              key={k}
+              onClick={() => toggle(k)}
+              className={`text-[10px] uppercase tracking-widest px-2 py-1 rounded-full ring-1 transition-colors ${on ? "ring-brand/40 bg-brand/10 text-brand" : "ring-border text-muted-foreground hover:bg-muted"}`}
+            >
+              {k}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
