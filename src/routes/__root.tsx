@@ -87,9 +87,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
       { name: "author", content: "Lumina AI" },
       { property: "og:title", content: "Lumina AI — Review Intelligence Platform" },
-      { property: "og:description", content: "AI-powered sentiment analysis and review intelligence for enterprise teams." },
+      { property: "og:description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Lumina AI — Review Intelligence Platform" },
+      { name: "twitter:description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f08296bd-1db6-431d-a789-f950a338c4c1/id-preview-ee26e1ea--b63c07fa-2992-441b-a148-7b4202e1a737.lovable.app-1783411658250.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f08296bd-1db6-431d-a789-f950a338c4c1/id-preview-ee26e1ea--b63c07fa-2992-441b-a148-7b4202e1a737.lovable.app-1783411658250.png" },
     ],
     links: [
       {
