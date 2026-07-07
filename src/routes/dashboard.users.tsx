@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
-import { Ban, Check, Search, Trash2, UserPlus } from "lucide-react";
+import { Ban, Check, Search, Trash2, UserPlus, Lock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useCan, useRole } from "@/lib/rbac";
+import { pushActivity } from "@/lib/activity-store";
 
 export const Route = createFileRoute("/dashboard/users")({
   component: Page,
@@ -25,6 +27,12 @@ function Page() {
   const [users, setUsers] = useState<User[]>(initialUsers);
   const [q, setQ] = useState("");
   const [toDelete, setToDelete] = useState<User | null>(null);
+  const role = useRole();
+  const canAssignRole = useCan("users:assign_role");
+  const canBlock = useCan("users:block");
+  const canDelete = useCan("users:delete");
+  const canInvite = useCan("users:invite");
+  const anyAdmin = canAssignRole || canBlock || canDelete || canInvite;
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -33,22 +41,54 @@ function Page() {
   }, [users, q]);
 
   const setRole = (id: string, role: Role) => {
+    if (!canAssignRole) { toast.error("You don't have permission to change roles"); return; }
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+    const u = users.find((x) => x.id === id);
+    pushActivity({ kind: "admin", title: `Role changed to ${role}`, detail: u?.email });
     toast.success(`Role updated to ${role}`);
   };
   const toggleBlock = (id: string) => {
+    if (!canBlock) { toast.error("You don't have permission to block users"); return; }
     setUsers((prev) =>
       prev.map((u) => (u.id === id ? { ...u, status: u.status === "Blocked" ? "Active" : "Blocked" } : u)),
     );
     const u = users.find((x) => x.id === id);
+    pushActivity({ kind: "admin", title: u?.status === "Blocked" ? `Unblocked ${u?.name}` : `Blocked ${u?.name}`, detail: u?.email });
     toast.success(u?.status === "Blocked" ? "User unblocked" : "User blocked");
   };
   const confirmDelete = () => {
     if (!toDelete) return;
+    if (!canDelete) { toast.error("You don't have permission to delete users"); setToDelete(null); return; }
     setUsers((prev) => prev.filter((u) => u.id !== toDelete.id));
+    pushActivity({ kind: "admin", title: `Deleted ${toDelete.name}`, detail: toDelete.email });
     toast.success(`${toDelete.name} deleted`);
     setToDelete(null);
   };
+  const handleInvite = () => {
+    if (!canInvite) { toast.error("You don't have permission to invite users"); return; }
+    pushActivity({ kind: "admin", title: "Invitation flow opened" });
+    toast.success("Invite dialog would open here");
+  };
+
+  if (!anyAdmin) {
+    return (
+      <>
+        <DashboardTopbar title="Users" />
+        <div className="p-6 max-w-2xl w-full mx-auto">
+          <div className="p-10 rounded-xl bg-card ring-1 ring-border text-center">
+            <div className="mx-auto size-12 rounded-full bg-danger/10 grid place-items-center mb-4">
+              <Lock className="size-6 text-danger" />
+            </div>
+            <h2 className="text-lg font-semibold">Unauthorized</h2>
+            <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
+              Your current role (<span className="font-medium text-foreground">{role}</span>) doesn't grant access to user administration.
+              Switch to an Admin role from the top bar to manage users.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -59,7 +99,12 @@ function Page() {
             <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, email, or role…" className="input-field pl-9" />
           </div>
-          <button className="bg-brand text-white text-sm px-4 py-2 rounded-lg font-medium hover:opacity-90 inline-flex items-center gap-1.5">
+          <button
+            onClick={handleInvite}
+            disabled={!canInvite}
+            title={canInvite ? "Invite a new user" : "Requires Admin role"}
+            className="bg-brand text-white text-sm px-4 py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+          >
             <UserPlus className="size-4" /> Invite user
           </button>
         </div>
@@ -91,8 +136,10 @@ function Page() {
                   <td className="px-4 py-3">
                     <select
                       value={u.role}
+                      disabled={!canAssignRole}
+                      title={canAssignRole ? "Change role" : "Requires Admin role"}
                       onChange={(e) => setRole(u.id, e.target.value as Role)}
-                      className="input-field h-8 py-0 text-xs"
+                      className="input-field h-8 py-0 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <option>Admin</option>
                       <option>Analyst</option>
@@ -107,14 +154,18 @@ function Page() {
                     <div className="flex items-center justify-end gap-1.5">
                       <button
                         onClick={() => toggleBlock(u.id)}
-                        className={`text-xs px-2 py-1 rounded ring-1 inline-flex items-center gap-1 ${u.status === "Blocked" ? "ring-success/40 text-success hover:bg-success/10" : "ring-border hover:bg-muted"}`}
+                        disabled={!canBlock}
+                        title={canBlock ? "" : "Requires Admin role"}
+                        className={`text-xs px-2 py-1 rounded ring-1 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${u.status === "Blocked" ? "ring-success/40 text-success hover:bg-success/10" : "ring-border hover:bg-muted"}`}
                         aria-label={u.status === "Blocked" ? "Unblock" : "Block"}
                       >
                         {u.status === "Blocked" ? <><Check className="size-3" /> Unblock</> : <><Ban className="size-3" /> Block</>}
                       </button>
                       <button
                         onClick={() => setToDelete(u)}
-                        className="text-xs px-2 py-1 rounded ring-1 ring-border hover:bg-danger/10 hover:text-danger inline-flex items-center gap-1"
+                        disabled={!canDelete}
+                        title={canDelete ? "" : "Requires Admin role"}
+                        className="text-xs px-2 py-1 rounded ring-1 ring-border hover:bg-danger/10 hover:text-danger disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                         aria-label="Delete"
                       >
                         <Trash2 className="size-3" /> Delete
