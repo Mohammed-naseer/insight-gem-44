@@ -3,429 +3,371 @@ import { DashboardTopbar } from "@/components/dashboard/topbar";
 import { useForm } from "react-hook-form";
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Upload, Sparkles, RotateCcw, Download, FileSpreadsheet, X, History, Play, Eye, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Upload, Sparkles, RotateCcw, Download, FileSpreadsheet, X, Loader2, CheckCircle2, AlertTriangle, Brain } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { pushActivity } from "@/lib/activity-store";
 import { downloadCSV, downloadPDF } from "@/lib/exports";
-import { addHistory, removeHistory, updateHistory, useHistory, type HistoryEntry } from "@/lib/analysis-history-store";
-import { relativeTime } from "@/lib/activity-store";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/analysis")({
   component: Page,
 });
 
 type FormData = { text: string; product: string; category: string };
+type Sentiment = "Positive" | "Neutral" | "Negative";
 
-type Sentiment = "positive" | "neutral" | "negative";
-type Result = {
+interface ModelResult {
   sentiment: Sentiment;
   confidence: number;
   emotion: string;
-  aspects: { name: string; sentiment: Sentiment; score: number }[];
-  keywords: string[];
   summary: string;
-  recommendation: string;
-};
-type BatchRow = { text: string; sentiment: Sentiment; confidence: number; emotion: string; keywords: string };
-
-const POS_WORDS = ["love", "great", "excellent", "amazing", "fast", "perfect", "incredible", "fantastic", "smooth", "reliable", "best"];
-const NEG_WORDS = ["bad", "slow", "hang", "hangs", "broken", "terrible", "awful", "worst", "buggy", "crash", "fail", "failed", "issue"];
-const STOP = new Set(["the","a","and","or","but","is","was","of","to","in","on","for","with","it","this","that","i","we","our","my","be","are","as","at","an","not"]);
-
-function analyze(text: string): Result {
-  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
-  let pos = 0, neg = 0;
-  words.forEach((w) => {
-    if (POS_WORDS.includes(w)) pos++;
-    if (NEG_WORDS.includes(w)) neg++;
-  });
-  let sentiment: Sentiment = "neutral";
-  if (pos > neg) sentiment = "positive";
-  else if (neg > pos) sentiment = "negative";
-  const total = pos + neg;
-  const confidence = total === 0 ? 0.55 + Math.random() * 0.15 : Math.min(0.99, 0.6 + Math.abs(pos - neg) / (total + 1) * 0.4);
-  const emotion = sentiment === "positive" ? (pos > 2 ? "Delight · Trust" : "Trust") : sentiment === "negative" ? (neg > 2 ? "Frustration · Anger" : "Frustration") : "Neutral";
-  const keywords = Array.from(new Set(words.filter((w) => w.length > 4 && !STOP.has(w)))).slice(0, 6);
-  const aspectSeed: [string, Sentiment][] = [
-    ["Quality", sentiment],
-    ["Performance", neg > 0 ? "negative" : "positive"],
-    ["Support", sentiment === "negative" ? "neutral" : "positive"],
-  ];
-  const aspects = aspectSeed.map(([name, s]) => ({ name, sentiment: s, score: 0.55 + Math.random() * 0.4 }));
-  const summary = sentiment === "positive"
-    ? "Customer expresses satisfaction with core value. Loyalty signals are strong; expansion opportunity."
-    : sentiment === "negative"
-      ? "Customer reports a specific pain point. Elevated churn risk — remediation recommended within 48h."
-      : "Mixed signals detected. Follow up to clarify use case and monitor next interaction.";
-  const recommendation = sentiment === "negative"
-    ? "Route to support with high priority and issue a proactive apology + credit."
-    : sentiment === "positive"
-      ? "Invite to case-study program and cross-sell adjacent products."
-      : "Add to nurture sequence and schedule a check-in.";
-  return { sentiment, confidence, emotion, aspects, keywords, summary, recommendation };
 }
+
+interface AnalysisResult {
+  id: string;
+  text: string;
+  models: {
+    gemini: ModelResult;
+    groq: ModelResult;
+    huggingface: ModelResult;
+  };
+  finalResult: {
+    sentiment: Sentiment;
+    agreementPercentage: number;
+    mostConfidentModel: string;
+  };
+}
+
+interface ApiResponse {
+  success: boolean;
+  data: AnalysisResult;
+}
+
+type BatchRow = { text: string; sentiment: string; confidence: number; emotion: string; keywords: string };
+
+const MODEL_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  gemini:      { label: "Google Gemini", color: "#4f46e5", icon: "✦" },
+  groq:        { label: "Groq (Llama)",  color: "#06b6d4", icon: "⚡" },
+  huggingface: { label: "HuggingFace",   color: "#f59e0b", icon: "🤗" },
+};
+
+const SENTIMENT_STYLE: Record<string, string> = {
+  Positive: "bg-success/10 text-success border-success/20",
+  Negative: "bg-danger/10 text-danger border-danger/20",
+  Neutral:  "bg-warning/10 text-warning border-warning/20",
+};
 
 function Page() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { register, handleSubmit, reset } = useForm<FormData>({
-    defaultValues: { text: "The new titanium chassis feels incredible, but the software still hangs when uploading 4K timelines. Support was fast but the issue persists.", product: "Enterprise Plan", category: "SaaS" },
+    defaultValues: {
+      text: "The new titanium chassis feels incredible, but the software still hangs when uploading 4K timelines. Support was fast but the issue persists.",
+      product: "Enterprise Plan",
+      category: "SaaS",
+    },
   });
-  const [result, setResult] = useState<Result | null>(null);
+
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [batch, setBatch] = useState<BatchRow[] | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   const [uploadName, setUploadName] = useState<string | null>(null);
-  const history = useHistory();
-  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
+  // ── Single analysis via real backend ──────────────────────────────────────
   const onSubmit = async (data: FormData) => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
-    const r = analyze(data.text);
-    setResult(r);
-    setLoading(false);
-    pushActivity({ kind: "analysis", title: "Single review analyzed", detail: `${data.product} · ${r.sentiment}` });
-    toast.success("Analysis complete");
+    setResult(null);
+    try {
+      const res = await api.post<ApiResponse>("/api/sentiment/analyze", { text: data.text });
+      if (res.success) {
+        setResult(res.data);
+        pushActivity({
+          kind: "analysis",
+          title: "Multi-model analysis complete",
+          detail: `${data.product} · ${res.data.finalResult.sentiment} · ${res.data.finalResult.agreementPercentage}% agreement`,
+        });
+        toast.success("Analysis complete — all 3 AI models responded!");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Analysis failed";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const runOnBuffer = async (fileName: string, size: number, buf: ArrayBuffer, historyId?: string) => {
-    const id = historyId ?? addHistory({ fileName, size, rows: [], status: "running" });
-    if (historyId) updateHistory(id, { status: "running", error: undefined, rows: [] });
+  // ── Batch analysis (local XLSX parsing + per-row API call) ────────────────
+  const runOnBuffer = async (fileName: string, _size: number, buf: ArrayBuffer) => {
+    setBatchLoading(true);
     try {
       const wb = XLSX.read(buf, { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-      const textCol = rows.length ? Object.keys(rows[0]).find((k) => /text|review|comment|message/i.test(k)) ?? Object.keys(rows[0])[0] : null;
+      const textCol = rows.length
+        ? Object.keys(rows[0]).find((k) => /text|review|comment|message/i.test(k)) ?? Object.keys(rows[0])[0]
+        : null;
       if (!textCol) throw new Error("Could not detect a text column");
-      await new Promise((r) => setTimeout(r, 500));
-      const analyzed: BatchRow[] = rows.slice(0, 500).map((row) => {
+
+      const analyzed: BatchRow[] = [];
+      const slice = rows.slice(0, 50); // cap at 50 for speed
+      for (const row of slice) {
         const text = String(row[textCol] ?? "");
-        const a = analyze(text);
-        return { text, sentiment: a.sentiment, confidence: Number(a.confidence.toFixed(2)), emotion: a.emotion, keywords: a.keywords.join(", ") };
-      });
+        if (!text.trim()) continue;
+        try {
+          const res = await api.post<ApiResponse>("/api/sentiment/analyze", { text });
+          analyzed.push({
+            text,
+            sentiment: res.data.finalResult.sentiment,
+            confidence: res.data.models.gemini.confidence,
+            emotion: res.data.models.gemini.emotion,
+            keywords: "",
+          });
+        } catch {
+          analyzed.push({ text, sentiment: "Neutral", confidence: 50, emotion: "Unknown", keywords: "" });
+        }
+      }
       setBatch(analyzed);
-      updateHistory(id, { status: "complete", rows: analyzed });
-      setActiveHistoryId(id);
-      pushActivity({ kind: "upload", title: `${fileName} uploaded`, detail: `${analyzed.length} rows` });
-      pushActivity({ kind: "analysis", title: "Batch analysis completed", detail: `${analyzed.length} reviews` });
+      pushActivity({ kind: "upload", title: `${fileName} batch complete`, detail: `${analyzed.length} rows analyzed` });
       toast.success(`Analyzed ${analyzed.length} reviews`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to parse file";
-      updateHistory(id, { status: "failed", error: msg });
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "Failed to parse file");
       setBatch(null);
       setUploadName(null);
+    } finally {
+      setBatchLoading(false);
     }
   };
-
-  const fileBuffers = useRef(new Map<string, ArrayBuffer>());
 
   const onFile = async (file: File) => {
-    setBatchLoading(true);
     setUploadName(file.name);
-    try {
-      const buf = await file.arrayBuffer();
-      const id = addHistory({ fileName: file.name, size: file.size, rows: [], status: "running" });
-      fileBuffers.current.set(id, buf);
-      await runOnBuffer(file.name, file.size, buf, id);
-    } finally {
-      setBatchLoading(false);
-    }
-  };
-
-  const revisit = (h: HistoryEntry) => {
-    if (h.status !== "complete") return;
-    setBatch(h.rows);
-    setUploadName(h.fileName);
-    setActiveHistoryId(h.id);
-    setResult(null);
-  };
-
-  const rerun = async (h: HistoryEntry) => {
-    const buf = fileBuffers.current.get(h.id);
-    if (!buf) { toast.error("Original file no longer available in this session"); return; }
-    setBatchLoading(true);
-    setUploadName(h.fileName);
-    try {
-      await runOnBuffer(h.fileName, h.size, buf, h.id);
-    } finally {
-      setBatchLoading(false);
-    }
-  };
-
-  const exportBatchCSV = () => {
-    if (!batch) return;
-    downloadCSV("analysis-results.csv", batch);
-    pushActivity({ kind: "export", title: "Batch analysis exported", detail: "CSV" });
-    toast.success("CSV downloaded");
-  };
-  const exportBatchPDF = () => {
-    if (!batch) return;
-    const summary = `Analyzed ${batch.length} reviews. Positive: ${batch.filter((b) => b.sentiment === "positive").length}, Neutral: ${batch.filter((b) => b.sentiment === "neutral").length}, Negative: ${batch.filter((b) => b.sentiment === "negative").length}.`;
-    downloadPDF("analysis-results.pdf", "Review Analysis — Batch Results", batch.slice(0, 60).map((b) => ({ text: b.text.slice(0, 60), sentiment: b.sentiment, confidence: b.confidence, emotion: b.emotion })), summary);
-    pushActivity({ kind: "export", title: "Batch analysis exported", detail: "PDF" });
-    toast.success("PDF downloaded");
+    const buf = await file.arrayBuffer();
+    await runOnBuffer(file.name, file.size, buf);
   };
 
   return (
     <>
-      <DashboardTopbar title="Review Analysis" />
-      <div className="p-6 grid gap-6 lg:grid-cols-5 max-w-[1600px] w-full mx-auto">
-        <div className="lg:col-span-2 space-y-4">
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 rounded-xl bg-card ring-1 ring-border space-y-4 h-fit">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Review text</label>
-            <textarea {...register("text", { required: true })} rows={8} className="input-field mt-1.5 resize-none" />
+      <DashboardTopbar title="AI Analysis" />
+      <div className="p-6 space-y-6 max-w-[1400px] w-full mx-auto">
+
+        {/* ── Input form ─────────────────────────────────────────────── */}
+        <div className="p-6 rounded-xl bg-card ring-1 ring-border space-y-4">
+          <div className="flex items-center gap-2">
+            <Brain className="size-5 text-brand" />
+            <h3 className="font-semibold tracking-tight">Multi-Model Sentiment Analysis</h3>
+            <span className="text-[10px] uppercase tracking-widest bg-brand/10 text-brand px-2 py-0.5 rounded-full font-semibold ml-auto">
+              Gemini + Groq + HuggingFace
+            </span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Product</label>
-              <select {...register("product")} className="input-field mt-1.5">
-                <option>Enterprise Plan</option><option>Analytics Pro</option><option>Reviews API</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Category</label>
-              <select {...register("category")} className="input-field mt-1.5">
-                <option>SaaS</option><option>Retail</option><option>Fintech</option>
-              </select>
-            </div>
-          </div>
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) onFile(f);
-            }}
-            className="rounded-lg border border-dashed border-border px-4 py-5 text-sm"
-          >
-            <label className="flex items-center gap-3 text-muted-foreground cursor-pointer">
-              <Upload className="size-4" />
-              <span className="flex-1">{uploadName ?? "Upload CSV or Excel (drag & drop)"}</span>
-              <span className="text-xs">.csv · .xlsx</span>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onFile(f);
-                }}
-              />
-            </label>
-          </div>
-          <div className="flex gap-2">
-            <button disabled={loading} className="flex-1 bg-brand text-white py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2">
-              <Sparkles className="size-4" /> {loading ? "Analyzing…" : "Analyze"}
-            </button>
-            <button type="button" onClick={() => { reset(); setResult(null); setBatch(null); setUploadName(null); if (fileRef.current) fileRef.current.value = ""; }} className="ring-1 ring-border px-4 rounded-lg text-sm hover:bg-muted flex items-center gap-2">
-              <RotateCcw className="size-4" /> Reset
-            </button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">Tip: files with a <span className="font-mono">text</span> or <span className="font-mono">review</span> column are auto-detected.</p>
-          {batch && (
-            <div className="text-xs text-muted-foreground flex items-center gap-2">
-              <button type="button" onClick={() => { setBatch(null); setUploadName(null); if (fileRef.current) fileRef.current.value = ""; }} className="inline-flex items-center gap-1 hover:text-foreground">
-                <X className="size-3" /> Clear batch
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <textarea
+              rows={4}
+              {...register("text", { required: true })}
+              className="input-field resize-none text-sm"
+              placeholder="Enter customer review or any text to analyse…"
+            />
+            <div className="flex gap-3 flex-wrap">
+              <input {...register("product")} className="input-field flex-1 min-w-40 text-sm" placeholder="Product / Plan" />
+              <input {...register("category")} className="input-field w-36 text-sm" placeholder="Category" />
+              <button
+                disabled={loading}
+                className="bg-brand text-white px-6 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center gap-2 shrink-0"
+              >
+                {loading ? <><Loader2 className="size-4 animate-spin" /> Analysing…</> : <><Sparkles className="size-4" /> Analyse</>}
+              </button>
+              <button type="button" onClick={() => { reset(); setResult(null); }} className="ring-1 ring-border px-3 py-2 rounded-lg text-sm hover:bg-muted">
+                <RotateCcw className="size-4" />
               </button>
             </div>
-          )}
-        </form>
+          </form>
+        </div>
 
-        <div className="p-4 rounded-xl bg-card ring-1 ring-border">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <History className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold tracking-tight">Analysis history</h3>
-            </div>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{history.length} runs</span>
+        {/* ── Loading skeleton ────────────────────────────────────────── */}
+        {loading && (
+          <div className="grid gap-4 md:grid-cols-3">
+            {["Gemini", "Groq", "HuggingFace"].map((m) => (
+              <div key={m} className="p-5 rounded-xl bg-card ring-1 ring-border animate-pulse space-y-3">
+                <div className="h-4 bg-muted rounded w-1/2" />
+                <div className="h-8 bg-muted rounded w-3/4" />
+                <div className="h-3 bg-muted rounded w-full" />
+                <div className="h-3 bg-muted rounded w-5/6" />
+              </div>
+            ))}
           </div>
-          {history.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">
-              <FileSpreadsheet className="size-6 mx-auto mb-2 text-muted-foreground/40" />
-              No uploads yet. Drop a CSV or Excel file to get started.
-            </div>
-          ) : (
-            <ul className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {history.map((h) => {
-                const active = h.id === activeHistoryId;
+        )}
+
+        {/* ── Results: 3 model cards ──────────────────────────────────── */}
+        {result && !loading && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            {/* Model cards */}
+            <div className="grid gap-4 md:grid-cols-3">
+              {(["gemini", "groq", "huggingface"] as const).map((key, i) => {
+                const m = result.models[key];
+                const meta = MODEL_LABELS[key];
+                const isBest = result.finalResult.mostConfidentModel.toLowerCase().includes(key) ||
+                  result.finalResult.mostConfidentModel.toLowerCase() === key;
                 return (
-                  <li
-                    key={h.id}
-                    className={`p-2.5 rounded-lg ring-1 transition-colors ${active ? "ring-brand/40 bg-brand/5" : "ring-border bg-background"}`}
+                  <motion.div
+                    key={key}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.07 }}
+                    className={`p-5 rounded-xl bg-card ring-1 ${isBest ? "ring-brand shadow-lg shadow-brand/10" : "ring-border"} space-y-3`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className={`size-6 rounded grid place-items-center shrink-0 ${
-                        h.status === "complete" ? "bg-success/10 text-success"
-                        : h.status === "failed" ? "bg-danger/10 text-danger"
-                        : "bg-brand/10 text-brand"
-                      }`}>
-                        {h.status === "complete" ? <CheckCircle2 className="size-3.5" />
-                          : h.status === "failed" ? <AlertTriangle className="size-3.5" />
-                          : <Loader2 className="size-3.5 animate-spin" />}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {meta.icon} {meta.label}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate">{h.fileName}</div>
-                        <div className="text-[10px] font-mono text-muted-foreground">
-                          {h.status === "complete" ? `${h.rows.length} rows` : h.status}
-                          {" · "}{relativeTime(h.at)}
-                          {h.error ? ` · ${h.error}` : ""}
-                        </div>
-                      </div>
-                      <div className="flex gap-0.5 shrink-0">
-                        <button
-                          onClick={() => revisit(h)}
-                          disabled={h.status !== "complete"}
-                          className="size-6 grid place-items-center rounded hover:bg-muted disabled:opacity-30"
-                          aria-label="View results"
-                          title="View results"
-                        >
-                          <Eye className="size-3.5" />
-                        </button>
-                        <button
-                          onClick={() => rerun(h)}
-                          disabled={!fileBuffers.current.has(h.id) || batchLoading}
-                          className="size-6 grid place-items-center rounded hover:bg-muted disabled:opacity-30"
-                          aria-label="Rerun"
-                          title={fileBuffers.current.has(h.id) ? "Rerun analysis" : "File unavailable (session-only)"}
-                        >
-                          <Play className="size-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { removeHistory(h.id); fileBuffers.current.delete(h.id); if (activeHistoryId === h.id) setActiveHistoryId(null); }}
-                          className="size-6 grid place-items-center rounded hover:bg-muted"
-                          aria-label="Remove"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
+                      {isBest && (
+                        <span className="text-[10px] bg-brand/10 text-brand px-2 py-0.5 rounded-full font-semibold">
+                          Most Confident
+                        </span>
+                      )}
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-        </div>
-
-        <div className="lg:col-span-3 space-y-4">
-          {!result && !loading && !batch && !batchLoading && (
-            <div className="p-12 rounded-xl bg-card ring-1 ring-border text-center text-muted-foreground">
-              <Sparkles className="size-8 mx-auto text-brand/70 mb-3" />
-              <p className="font-medium text-foreground">Ready when you are</p>
-              <p className="text-sm mt-1">Enter or upload a review and hit Analyze to see AI predictions.</p>
-            </div>
-          )}
-          {(loading || batchLoading) && (
-            <div className="space-y-3">
-              {[0,1,2].map((i) => <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />)}
-            </div>
-          )}
-          {result && !batch && (
-            <>
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-6 rounded-xl bg-card ring-1 ring-border">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-muted-foreground">Sentiment</div>
-                    <div className={`text-3xl font-semibold mt-1 capitalize ${result.sentiment === "positive" ? "text-success" : result.sentiment === "negative" ? "text-danger" : "text-warning"}`}>{result.sentiment}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs uppercase tracking-widest text-muted-foreground">Confidence</div>
-                    <div className="text-3xl font-semibold mt-1 font-mono">{(result.confidence * 100).toFixed(1)}%</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs uppercase tracking-widest text-muted-foreground">Emotion</div>
-                    <div className="text-lg font-semibold mt-1">{result.emotion}</div>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="p-6 rounded-xl bg-card ring-1 ring-border">
-                <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Aspect analysis</div>
-                <div className="space-y-3">
-                  {result.aspects.map((a) => (
-                    <div key={a.name}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium">{a.name}</span>
-                        <span className="font-mono text-muted-foreground">{(a.score * 100).toFixed(0)}%</span>
+                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-semibold ${SENTIMENT_STYLE[m.sentiment]}`}>
+                      {m.sentiment === "Positive" ? <CheckCircle2 className="size-4" /> : <AlertTriangle className="size-4" />}
+                      {m.sentiment}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Confidence</span>
+                        <span className="font-mono font-semibold">{m.confidence}%</span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full ${a.sentiment === "positive" ? "bg-success" : a.sentiment === "negative" ? "bg-danger" : "bg-warning"}`} style={{ width: `${a.score * 100}%` }} />
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${m.confidence}%`, background: meta.color }}
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
-              </motion.div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{m.emotion} · {m.summary}</p>
+                  </motion.div>
+                );
+              })}
+            </div>
 
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="p-6 rounded-xl bg-card ring-1 ring-border">
-                <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Keywords</div>
-                <div className="flex flex-wrap gap-2">
-                  {result.keywords.map((k) => (
-                    <span key={k} className="px-2.5 py-1 rounded-md bg-muted text-xs font-mono">{k}</span>
-                  ))}
+            {/* Final verdict */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.25 }}
+              className="p-6 rounded-xl bg-gradient-to-br from-brand/5 to-accent-cyan/5 ring-1 ring-brand/20"
+            >
+              <div className="flex items-start justify-between flex-wrap gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground font-semibold mb-1">Final Verdict</p>
+                  <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-lg font-bold ${SENTIMENT_STYLE[result.finalResult.sentiment]}`}>
+                    {result.finalResult.sentiment === "Positive" ? "😊" : result.finalResult.sentiment === "Negative" ? "😞" : "😐"}
+                    {result.finalResult.sentiment}
+                  </div>
                 </div>
-              </motion.div>
-
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="p-6 rounded-xl bg-gradient-to-br from-brand/5 to-accent-cyan/5 ring-1 ring-brand/20">
-                <div className="text-xs uppercase tracking-widest text-brand mb-2">AI summary</div>
-                <p className="text-sm leading-relaxed">{result.summary}</p>
-                <div className="text-xs uppercase tracking-widest text-brand mt-4 mb-2">Recommendation</div>
-                <p className="text-sm leading-relaxed">{result.recommendation}</p>
-              </motion.div>
-            </>
-          )}
-          {batch && !batchLoading && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                {(["positive","neutral","negative"] as Sentiment[]).map((s) => {
-                  const count = batch.filter((b) => b.sentiment === s).length;
-                  const pct = ((count / batch.length) * 100).toFixed(1);
-                  return (
-                    <div key={s} className="p-4 rounded-xl bg-card ring-1 ring-border">
-                      <div className="text-xs uppercase tracking-widest text-muted-foreground capitalize">{s}</div>
-                      <div className={`text-2xl font-semibold mt-1 ${s === "positive" ? "text-success" : s === "negative" ? "text-danger" : "text-warning"}`}>{count}</div>
-                      <div className="text-[11px] font-mono text-muted-foreground">{pct}%</div>
-                    </div>
-                  );
-                })}
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground mb-1">Model agreement</p>
+                  <div className="text-3xl font-bold tabular-nums text-brand">{result.finalResult.agreementPercentage}%</div>
+                  <p className="text-xs text-muted-foreground mt-0.5">Best: {result.finalResult.mostConfidentModel}</p>
+                </div>
               </div>
-              <div className="p-6 rounded-xl bg-card ring-1 ring-border">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="size-4 text-brand" />
-                    <h3 className="font-semibold tracking-tight">Batch results</h3>
-                    <span className="text-xs text-muted-foreground">{batch.length} rows</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={exportBatchCSV} className="text-xs ring-1 ring-border px-2.5 py-1.5 rounded-lg hover:bg-muted inline-flex items-center gap-1.5"><Download className="size-3.5" /> CSV</button>
-                    <button onClick={exportBatchPDF} className="text-xs ring-1 ring-border px-2.5 py-1.5 rounded-lg hover:bg-muted inline-flex items-center gap-1.5"><Download className="size-3.5" /> PDF</button>
-                  </div>
-                </div>
-                <div className="max-h-96 overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase tracking-widest text-muted-foreground sticky top-0 bg-card">
-                      <tr><th className="text-left py-2">Review</th><th className="text-left py-2">Sentiment</th><th className="text-left py-2">Confidence</th><th className="text-left py-2">Emotion</th></tr>
-                    </thead>
-                    <tbody>
-                      {batch.slice(0, 100).map((b, i) => (
-                        <tr key={i} className="border-t border-border">
-                          <td className="py-2 pr-3 max-w-md truncate text-muted-foreground">{b.text}</td>
-                          <td className="py-2 pr-3"><span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${b.sentiment === "positive" ? "bg-success/10 text-success" : b.sentiment === "negative" ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"}`}>{b.sentiment}</span></td>
-                          <td className="py-2 pr-3 font-mono">{(b.confidence * 100).toFixed(0)}%</td>
-                          <td className="py-2 pr-3 text-muted-foreground">{b.emotion}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {batch.length > 100 && <div className="text-[11px] text-muted-foreground text-center py-2">Showing first 100 of {batch.length}. Export to see all.</div>}
-                </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => downloadCSV([{ text: result.text, ...result.finalResult }], "analysis")}
+                  className="ring-1 ring-border px-3 py-1.5 rounded-lg text-xs hover:bg-muted flex items-center gap-1.5"
+                >
+                  <Download className="size-3" /> CSV
+                </button>
+                <button
+                  onClick={() => downloadPDF([{ text: result.text, ...result.finalResult }], "analysis")}
+                  className="ring-1 ring-border px-3 py-1.5 rounded-lg text-xs hover:bg-muted flex items-center gap-1.5"
+                >
+                  <Download className="size-3" /> PDF
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* ── Batch upload ────────────────────────────────────────────── */}
+        <div className="p-6 rounded-xl bg-card ring-1 ring-border space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold tracking-tight">Batch Analysis</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Upload an Excel/CSV with a text column — up to 50 rows via AI</p>
+            </div>
+            {uploadName && (
+              <button onClick={() => { setUploadName(null); setBatch(null); }} className="text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+
+          {!uploadName ? (
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="w-full border-2 border-dashed border-border rounded-xl py-10 flex flex-col items-center gap-3 hover:border-brand/50 hover:bg-brand/5 transition-colors"
+            >
+              <Upload className="size-8 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Drop an Excel/CSV here or click to browse</span>
+              <span className="text-xs text-muted-foreground/60">.xlsx, .xls, .csv — max 50 rows</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/50">
+              <FileSpreadsheet className="size-8 text-brand shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{uploadName}</p>
+                {batchLoading && <p className="text-xs text-muted-foreground animate-pulse">Sending rows to AI…</p>}
+              </div>
+              {batchLoading && <Loader2 className="size-5 animate-spin text-brand shrink-0" />}
+            </div>
+          )}
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }}
+          />
+
+          {batch && batch.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">{batch.length} rows analyzed</p>
+                <button
+                  onClick={() => downloadCSV(batch, "batch-analysis")}
+                  className="ring-1 ring-border px-3 py-1.5 rounded-lg text-xs hover:bg-muted flex items-center gap-1.5"
+                >
+                  <Download className="size-3" /> Export CSV
+                </button>
+              </div>
+              <div className="overflow-x-auto rounded-xl ring-1 ring-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>{["Text", "Sentiment", "Confidence", "Emotion"].map((h) => (
+                      <th key={h} className="text-left px-4 py-2.5 text-muted-foreground font-medium">{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {batch.slice(0, 20).map((row, i) => (
+                      <tr key={i} className="hover:bg-muted/30">
+                        <td className="px-4 py-2.5 max-w-[280px] truncate text-muted-foreground">{row.text}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-flex text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${SENTIMENT_STYLE[row.sentiment] ?? "bg-muted"}`}>
+                            {row.sentiment}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">{row.confidence}%</td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{row.emotion}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {batch.length > 20 && (
+                  <p className="text-xs text-center text-muted-foreground py-3">Showing 20 of {batch.length} rows. Export CSV for full data.</p>
+                )}
               </div>
             </div>
           )}
         </div>
+
       </div>
     </>
   );

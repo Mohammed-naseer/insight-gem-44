@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 
 export const Route = createFileRoute("/dashboard")({
@@ -6,6 +6,14 @@ export const Route = createFileRoute("/dashboard")({
     { title: "Dashboard — Lumina AI" },
     { name: "description", content: "Enterprise review intelligence dashboard." },
   ]}),
+  beforeLoad: () => {
+    // Guard: localStorage is not available during SSR — skip auth check on server
+    if (typeof window === 'undefined') return;
+    const token = localStorage.getItem("ai_sentiment_token");
+    if (!token) {
+      throw redirect({ to: "/login" });
+    }
+  },
   component: DashboardLayout,
 });
 

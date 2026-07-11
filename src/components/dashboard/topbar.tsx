@@ -3,11 +3,14 @@ import { useEffect, useState } from "react";
 import { GlobalSearch } from "@/components/dashboard/global-search";
 import { ROLES, setRole, useRole, type Role } from "@/lib/rbac";
 import { pushActivity } from "@/lib/activity-store";
+import { useAuth } from "@/lib/auth-store";
 
 export function DashboardTopbar({ title }: { title: string }) {
   const [dark, setDark] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const role = useRole();
+  const { user } = useAuth();
+  
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
@@ -21,6 +24,11 @@ export function DashboardTopbar({ title }: { title: string }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const initials = user?.name
+    ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "U";
+
   return (
     <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-40">
       <div className="h-full px-6 flex items-center gap-4">
@@ -64,7 +72,9 @@ export function DashboardTopbar({ title }: { title: string }) {
             <Bell className="size-4" />
             <span className="absolute top-2 right-2 size-1.5 rounded-full bg-danger" />
           </button>
-          <div className="size-9 rounded-full bg-gradient-to-br from-brand to-accent-cyan grid place-items-center text-white text-xs font-semibold">SJ</div>
+          <div className="size-9 rounded-full bg-gradient-to-br from-brand to-accent-cyan grid place-items-center text-white text-xs font-semibold" title={user?.name}>
+            {initials}
+          </div>
         </div>
       </div>
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />

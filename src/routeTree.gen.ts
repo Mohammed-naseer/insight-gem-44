@@ -22,6 +22,8 @@ import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard.reports'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard.products'
+import { Route as DashboardHistoryRouteImport } from './routes/dashboard.history'
+import { Route as DashboardApprovalRouteImport } from './routes/dashboard.approval'
 import { Route as DashboardAnalyticsRouteImport } from './routes/dashboard.analytics'
 import { Route as DashboardAnalysisRouteImport } from './routes/dashboard.analysis'
 import { Route as DashboardActivityRouteImport } from './routes/dashboard.activity'
@@ -91,6 +93,16 @@ const DashboardProductsRoute = DashboardProductsRouteImport.update({
   path: '/products',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardHistoryRoute = DashboardHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardApprovalRoute = DashboardApprovalRouteImport.update({
+  id: '/approval',
+  path: '/approval',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAnalyticsRoute = DashboardAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -119,6 +131,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/analysis': typeof DashboardAnalysisRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/approval': typeof DashboardApprovalRoute
+  '/dashboard/history': typeof DashboardHistoryRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -136,6 +150,8 @@ export interface FileRoutesByTo {
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/analysis': typeof DashboardAnalysisRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/approval': typeof DashboardApprovalRoute
+  '/dashboard/history': typeof DashboardHistoryRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -155,6 +171,8 @@ export interface FileRoutesById {
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/analysis': typeof DashboardAnalysisRoute
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
+  '/dashboard/approval': typeof DashboardApprovalRoute
+  '/dashboard/history': typeof DashboardHistoryRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -175,6 +193,8 @@ export interface FileRouteTypes {
     | '/dashboard/activity'
     | '/dashboard/analysis'
     | '/dashboard/analytics'
+    | '/dashboard/approval'
+    | '/dashboard/history'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -192,6 +212,8 @@ export interface FileRouteTypes {
     | '/dashboard/activity'
     | '/dashboard/analysis'
     | '/dashboard/analytics'
+    | '/dashboard/approval'
+    | '/dashboard/history'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -210,6 +232,8 @@ export interface FileRouteTypes {
     | '/dashboard/activity'
     | '/dashboard/analysis'
     | '/dashboard/analytics'
+    | '/dashboard/approval'
+    | '/dashboard/history'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -321,6 +345,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProductsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/history': {
+      id: '/dashboard/history'
+      path: '/history'
+      fullPath: '/dashboard/history'
+      preLoaderRoute: typeof DashboardHistoryRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/approval': {
+      id: '/dashboard/approval'
+      path: '/approval'
+      fullPath: '/dashboard/approval'
+      preLoaderRoute: typeof DashboardApprovalRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/analytics': {
       id: '/dashboard/analytics'
       path: '/analytics'
@@ -349,6 +387,8 @@ interface DashboardRouteChildren {
   DashboardActivityRoute: typeof DashboardActivityRoute
   DashboardAnalysisRoute: typeof DashboardAnalysisRoute
   DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
+  DashboardApprovalRoute: typeof DashboardApprovalRoute
+  DashboardHistoryRoute: typeof DashboardHistoryRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
@@ -360,6 +400,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardActivityRoute: DashboardActivityRoute,
   DashboardAnalysisRoute: DashboardAnalysisRoute,
   DashboardAnalyticsRoute: DashboardAnalyticsRoute,
+  DashboardApprovalRoute: DashboardApprovalRoute,
+  DashboardHistoryRoute: DashboardHistoryRoute,
   DashboardProductsRoute: DashboardProductsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
@@ -384,3 +426,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

@@ -2,7 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AuthShell } from "@/components/site/auth-shell";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { Github } from "lucide-react";
+import { Github, Loader2 } from "lucide-react";
+import { login, googleLogin } from "@/lib/auth-store";
+import { auth, googleProvider } from "@/lib/firebase";
+import { signInWithPopup } from "firebase/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [
@@ -16,12 +19,33 @@ type FormData = { email: string; password: string; remember: boolean };
 
 function Page() {
   const nav = useNavigate();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>();
-  const onSubmit = async (_: FormData) => {
-    await new Promise((r) => setTimeout(r, 700));
-    toast.success("Welcome back");
-    nav({ to: "/dashboard" });
+  const { register, handleSubmit, formState: { errors, isSubmitting }, setError } = useForm<FormData>();
+
+  const onSubmit = async (data: FormData) => {
+    try {
+      await login(data.email, data.password);
+      toast.success("Welcome back!");
+      nav({ to: "/dashboard" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Login failed";
+      setError("root", { message: msg });
+      toast.error(msg);
+    }
   };
+
+  const onGoogle = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const idToken = await result.user.getIdToken();
+      await googleLogin(idToken);
+      toast.success("Signed in with Google!");
+      nav({ to: "/dashboard" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Google sign-in failed";
+      toast.error(msg);
+    }
+  };
+
   return (
     <AuthShell
       title="Welcome back"
@@ -29,10 +53,18 @@ function Page() {
       footer={<>Don't have an account? <Link to="/signup" className="text-brand font-medium">Sign up</Link></>}
     >
       <div className="grid grid-cols-2 gap-2">
-        <button className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted flex items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onGoogle}
+          className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted flex items-center justify-center gap-2"
+        >
           <GoogleIcon /> Google
         </button>
-        <button className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted flex items-center justify-center gap-2">
+        <button
+          type="button"
+          className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+          disabled
+        >
           <Github className="size-4" /> GitHub
         </button>
       </div>
@@ -41,19 +73,42 @@ function Page() {
       </div>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
         <div>
-          <input type="email" placeholder="Work email" {...register("email", { required: true })} className="input-field" />
-          {errors.email && <span className="text-xs text-danger">Email is required</span>}
+          <input type="email" placeholder="Work email" {...register("email", { required: "Email is required" })} className="input-field" />
+          {errors.email && <span className="text-xs text-danger">{errors.email.message}</span>}
         </div>
         <div>
-          <input type="password" placeholder="Password" {...register("password", { required: true })} className="input-field" />
-          {errors.password && <span className="text-xs text-danger">Password is required</span>}
+          <input type="password" placeholder="Password" {...register("password", { required: "Password is required" })} className="input-field" />
+          {errors.password && <span className="text-xs text-danger">{errors.password.message}</span>}
         </div>
+        {errors.root && (() => {
+          const msg = errors.root.message || "";
+          const isPending = msg.toLowerCase().includes("awaiting") || msg.toLowerCase().includes("pending");
+          const isRejected = msg.toLowerCase().includes("rejected");
+          return (
+            <div className={`text-xs rounded-lg px-3 py-2.5 border flex items-start gap-2 ${
+              isPending
+                ? "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/20 dark:border-amber-800"
+                : isRejected
+                ? "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-900/20 dark:border-red-800"
+                : "text-danger bg-danger/10 border-danger/20"
+            }`}>
+              <span className="text-base leading-none mt-0.5">{isPending ? "⏳" : isRejected ? "🚫" : "⚠️"}</span>
+              <div>
+                <p className="font-medium">{isPending ? "Account Pending Approval" : isRejected ? "Account Request Rejected" : "Login Failed"}</p>
+                <p className="mt-0.5 opacity-80">{msg}</p>
+              </div>
+            </div>
+          );
+        })()}
         <div className="flex items-center justify-between text-xs">
           <label className="flex items-center gap-2"><input type="checkbox" {...register("remember")} /> Remember me</label>
-          <Link to="/login" className="text-brand">Forgot password?</Link>
+          <span className="text-brand cursor-pointer">Forgot password?</span>
         </div>
-        <button disabled={isSubmitting} className="w-full bg-brand text-white py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-60">
-          {isSubmitting ? "Signing in…" : "Sign in"}
+        <button
+          disabled={isSubmitting}
+          className="w-full bg-brand text-white py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? <><Loader2 className="size-4 animate-spin" /> Signing in…</> : "Sign in"}
         </button>
       </form>
     </AuthShell>

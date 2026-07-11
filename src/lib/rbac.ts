@@ -1,55 +1,78 @@
 import { useSyncExternalStore } from "react";
+import { useAuth } from "./auth-store";
 
-export type Role = "Admin" | "Analyst" | "Viewer";
+export type Role = "Admin" | "Analyst" | "Viewer" | "Reader" | "Pending";
 
 export type Permission =
-  | "users:assign_role"
-  | "users:block"
+  | "users:manage"
+  | "users:approve"
   | "users:delete"
-  | "users:invite"
-  | "reports:generate"
-  | "analysis:run";
+  | "users:assign_role"
+  | "reports:view"
+  | "models:manage"
+  | "dashboard:view"
+  | "analysis:run"
+  | "reports:export"
+  | "history:view"
+  | "analytics:view";
 
 const rolePerms: Record<Role, Permission[]> = {
   Admin: [
-    "users:assign_role",
-    "users:block",
+    "users:manage",
+    "users:approve",
     "users:delete",
-    "users:invite",
-    "reports:generate",
-    "analysis:run",
+    "users:assign_role",
+    "reports:view",
+    "models:manage",
+    "dashboard:view",
   ],
-  Analyst: ["reports:generate", "analysis:run"],
-  Viewer: [],
+  Analyst: [
+    "analysis:run",
+    "dashboard:view",
+    "reports:export",
+    "history:view",
+  ],
+  Viewer: [
+    "dashboard:view",
+    "reports:view",
+  ],
+  Reader: [
+    "reports:view",
+    "analytics:view",
+  ],
+  Pending: [],
 };
 
-let current: Role = "Admin";
+let simulatedRole: Role | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
 export function setRole(role: Role) {
-  current = role;
+  simulatedRole = role;
   emit();
 }
 
 export function useRole(): Role {
+  const { user } = useAuth();
+  const authRole = (user?.role || "Viewer") as Role;
+
   return useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => current,
-    () => current,
+    () => simulatedRole || authRole,
+    () => simulatedRole || authRole,
   );
 }
 
 export function useCan(perm: Permission): boolean {
   const role = useRole();
-  return rolePerms[role].includes(perm);
+  return rolePerms[role]?.includes(perm) || false;
 }
 
 export function can(role: Role, perm: Permission): boolean {
-  return rolePerms[role].includes(perm);
+  return rolePerms[role]?.includes(perm) || false;
 }
 
-export const ROLES: Role[] = ["Admin", "Analyst", "Viewer"];
+export const ROLES: Role[] = ["Admin", "Analyst", "Viewer", "Reader", "Pending"];

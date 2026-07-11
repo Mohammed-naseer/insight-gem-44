@@ -1,24 +1,67 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
+import { useAuth, logout, updateAuthUser } from "@/lib/auth-store";
+import { api } from "@/lib/api";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { Loader2, LogOut } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/settings")({
   component: Page,
 });
 
+type ProfileForm = { name: string };
+
 function Page() {
+  const { user } = useAuth();
+  const nav = useNavigate();
+  const { register, handleSubmit, formState: { isSubmitting } } = useForm<ProfileForm>({
+    defaultValues: { name: user?.name ?? "" },
+  });
+
+  const onSave = async (data: ProfileForm) => {
+    try {
+      await api.put("/api/profile", { name: data.name });
+      updateAuthUser({ name: data.name });
+      toast.success("Profile updated!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    }
+  };
+
+  const onLogout = async () => {
+    await logout();
+    toast.success("Signed out");
+    nav({ to: "/login" });
+  };
+
   return (
     <>
       <DashboardTopbar title="Settings" />
       <div className="p-6 max-w-3xl w-full mx-auto space-y-6">
+
         <Card title="Profile" desc="Update your personal details visible across the workspace.">
           <div className="flex items-center gap-4">
-            <div className="size-16 rounded-full bg-gradient-to-br from-brand to-accent-cyan grid place-items-center text-white text-lg font-semibold">SJ</div>
-            <button className="ring-1 ring-border px-3 py-1.5 rounded-lg text-sm hover:bg-muted">Change photo</button>
+            <div className="size-16 rounded-full bg-gradient-to-br from-brand to-accent-cyan grid place-items-center text-white text-lg font-semibold">
+              {user?.name?.split(" ").map((n) => n[0]).join("").slice(0, 2) ?? "?"}
+            </div>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Full name"><input className="input-field" defaultValue="Sarah Jenkins" /></Field>
-            <Field label="Email"><input className="input-field" defaultValue="sarah@northwind.co" /></Field>
-          </div>
+          <form onSubmit={handleSubmit(onSave)} className="grid sm:grid-cols-2 gap-3">
+            <Field label="Full name">
+              <input className="input-field" {...register("name", { required: true })} />
+            </Field>
+            <Field label="Email">
+              <input className="input-field" defaultValue={user?.email ?? ""} readOnly disabled />
+            </Field>
+            <div className="sm:col-span-2">
+              <button
+                disabled={isSubmitting}
+                className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-60 flex items-center gap-2"
+              >
+                {isSubmitting ? <><Loader2 className="size-4 animate-spin" /> Saving…</> : "Save changes"}
+              </button>
+            </div>
+          </form>
         </Card>
 
         <Card title="Preferences" desc="Personalize your Lumina experience.">
@@ -37,14 +80,20 @@ function Page() {
           <Toggle label="Two-factor authentication" defaultChecked />
         </Card>
 
-        <Card title="API configuration" desc="Manage tokens and webhook endpoints.">
-          <Field label="Publishable key"><input className="input-field font-mono text-xs" defaultValue="pk_live_9k2h8f2h3jsdlfk" readOnly /></Field>
-        </Card>
-
-        <div className="p-6 rounded-xl bg-danger/5 ring-1 ring-danger/30">
-          <div className="font-semibold text-danger">Delete account</div>
-          <p className="text-sm text-muted-foreground mt-1">Permanently remove your workspace and all data. This action cannot be undone.</p>
-          <button className="mt-4 bg-danger text-white text-sm px-4 py-2 rounded-lg font-medium hover:opacity-90">Delete workspace</button>
+        <div className="p-6 rounded-xl bg-danger/5 ring-1 ring-danger/30 space-y-3">
+          <div className="font-semibold text-danger">Danger zone</div>
+          <div className="flex items-center gap-4 flex-wrap">
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 bg-muted border border-border px-4 py-2 rounded-lg text-sm font-medium hover:bg-muted/80"
+            >
+              <LogOut className="size-4" /> Sign out
+            </button>
+            <button className="bg-danger text-white text-sm px-4 py-2 rounded-lg font-medium hover:opacity-90">
+              Delete account
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">Permanently removes your workspace and all data. Cannot be undone.</p>
         </div>
       </div>
     </>
