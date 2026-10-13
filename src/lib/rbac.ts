@@ -7,8 +7,11 @@ export type Permission =
   | "users:manage"
   | "users:approve"
   | "users:delete"
+  | "users:block"
+  | "users:invite"
   | "users:assign_role"
   | "reports:view"
+  | "reports:generate"
   | "models:manage"
   | "dashboard:view"
   | "analysis:run"
@@ -21,8 +24,11 @@ const rolePerms: Record<Role, Permission[]> = {
     "users:manage",
     "users:approve",
     "users:delete",
+    "users:block",
+    "users:invite",
     "users:assign_role",
     "reports:view",
+    "reports:generate",
     "models:manage",
     "dashboard:view",
   ],
@@ -30,6 +36,7 @@ const rolePerms: Record<Role, Permission[]> = {
     "analysis:run",
     "dashboard:view",
     "reports:export",
+    "reports:generate",
     "history:view",
   ],
   Viewer: [
@@ -55,14 +62,15 @@ export function setRole(role: Role) {
 export function useRole(): Role {
   const { user } = useAuth();
   const authRole = (user?.role || "Viewer") as Role;
+  const effectiveRole = authRole === "Admin" ? (simulatedRole || authRole) : authRole;
 
   return useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => simulatedRole || authRole,
-    () => simulatedRole || authRole,
+    () => effectiveRole,
+    () => effectiveRole,
   );
 }
 

@@ -7,6 +7,8 @@ import { login, googleLogin } from "@/lib/auth-store";
 import { auth, googleProvider } from "@/lib/firebase";
 import { signInWithPopup } from "firebase/auth";
 
+import { useState } from "react";
+
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [
     { title: "Sign in — Lumina AI" },
@@ -19,6 +21,7 @@ type FormData = { email: string; password: string; remember: boolean };
 
 function Page() {
   const nav = useNavigate();
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { register, handleSubmit, formState: { errors, isSubmitting }, setError } = useForm<FormData>();
 
   const onSubmit = async (data: FormData) => {
@@ -34,15 +37,38 @@ function Page() {
   };
 
   const onGoogle = async () => {
+    if (isGoogleLoading) return;
+    setIsGoogleLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const idToken = await result.user.getIdToken();
       await googleLogin(idToken);
       toast.success("Signed in with Google!");
       nav({ to: "/dashboard" });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Google sign-in failed";
-      toast.error(msg);
+    } catch (err: any) {
+      const errorCode = err?.code || "";
+      const errorMessage = err?.message || "";
+
+      if (errorCode === "auth/popup-closed-by-user") {
+        toast.info("Google sign-in popup was closed.");
+      } else if (errorCode === "auth/popup-blocked") {
+        toast.error("Sign-in popup was blocked by your browser. Please allow popups for this site and try again.");
+      } else if (errorCode === "auth/cancelled-popup-request") {
+        // Ignored: another popup request was already pending
+      } else if (
+        errorMessage.includes("ERR_QUIC_PROTOCOL_ERROR") ||
+        errorMessage.includes("QUIC_NETWORK_IDLE_TIMEOUT") ||
+        errorCode === "auth/network-request-failed"
+      ) {
+        toast.error("Network timeout over QUIC. Please check your internet connection or disable QUIC in browser (chrome://flags/#enable-quic).");
+      } else if (errorMessage.includes("INTERNAL ASSERTION FAILED")) {
+        toast.error("Sign-in process was interrupted by a network timeout. Please try again.");
+      } else {
+        const msg = err instanceof Error ? err.message : "Google sign-in failed";
+        toast.error(msg);
+      }
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -56,9 +82,10 @@ function Page() {
         <button
           type="button"
           onClick={onGoogle}
-          className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted flex items-center justify-center gap-2"
+          disabled={isGoogleLoading || isSubmitting}
+          className="ring-1 ring-border py-2 rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          <GoogleIcon /> Google
+          {isGoogleLoading ? <Loader2 className="size-4 animate-spin" /> : <GoogleIcon />} Google
         </button>
         <button
           type="button"

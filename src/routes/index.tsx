@@ -275,9 +275,9 @@ const testimonials = [
 ];
 
 const plans = [
-  { name: "Starter", price: "$49", period: "/mo", tag: "For small teams beginning to measure sentiment", cta: "Start free", featured: false,
+  { name: "Starter", price: "₹3,999", period: "/mo", tag: "For small teams beginning to measure sentiment", cta: "Start free", featured: false,
     features: ["Up to 10K reviews / mo", "Sentiment + emotion", "3 team seats", "Email support"] },
-  { name: "Professional", price: "$249", period: "/mo", tag: "Everything in Starter, plus advanced analytics", cta: "Start free", featured: true,
+  { name: "Professional", price: "₹19,999", period: "/mo", tag: "Everything in Starter, plus advanced analytics", cta: "Start free", featured: true,
     features: ["Up to 250K reviews / mo", "Aspect-level analytics", "10 team seats", "Priority support", "SSO/SAML"] },
   { name: "Enterprise", price: "Custom", period: "", tag: "For regulated and global teams", cta: "Contact sales", featured: false,
     features: ["Unlimited reviews", "Dedicated model tuning", "Unlimited seats", "24/7 support + SLA", "Data residency"] },

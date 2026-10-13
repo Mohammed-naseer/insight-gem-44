@@ -78,29 +78,36 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('theme');if(s==='dark'||(!s&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}else{document.documentElement.classList.remove('dark');}}catch(e){}})();`;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lumina AI — Review Intelligence Platform" },
-      { name: "description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
+      { title: "Lumina AI — AI Sentiment Intelligence Platform" },
+      { name: "description", content: "Transform customer data and feedback into executive intelligence with AI-powered sentiment analysis, data profiling, aspect extraction, and actionable insights." },
       { name: "author", content: "Lumina AI" },
-      { property: "og:title", content: "Lumina AI — Review Intelligence Platform" },
-      { property: "og:description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
+      { property: "og:title", content: "Lumina AI — AI Sentiment Intelligence Platform" },
+      { property: "og:description", content: "Transform customer data into executive intelligence with AI-powered sentiment analysis and automated dataset profiling." },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/lumina-logo.png" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Lumina AI — Review Intelligence Platform" },
-      { name: "twitter:description", content: "Transform customer reviews into executive intelligence with AI-powered sentiment analysis, aspect extraction, and predictive insights." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f08296bd-1db6-431d-a789-f950a338c4c1/id-preview-ee26e1ea--b63c07fa-2992-441b-a148-7b4202e1a737.lovable.app-1783411658250.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f08296bd-1db6-431d-a789-f950a338c4c1/id-preview-ee26e1ea--b63c07fa-2992-441b-a148-7b4202e1a737.lovable.app-1783411658250.png" },
+      { name: "twitter:title", content: "Lumina AI — AI Sentiment Intelligence Platform" },
+      { name: "twitter:description", content: "Transform customer data into executive intelligence." },
+      { name: "twitter:image", content: "/lumina-logo.png" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/lumina-icon.png", type: "image/png" },
+    ],
+    scripts: [
+      {
+        children: THEME_SCRIPT,
+      },
     ],
   }),
   shellComponent: RootShell,

@@ -1,13 +1,37 @@
 import { Link } from "@tanstack/react-router";
-import { Sparkles } from "lucide-react";
 
-export function Logo({ to = "/" }: { to?: string }) {
+interface LogoProps {
+  to?: string;
+  compact?: boolean;
+  showSubtitle?: boolean;
+  className?: string;
+}
+
+export function Logo({ to = "/", compact = false, showSubtitle = true, className = "" }: LogoProps) {
+  if (compact) {
+    return (
+      <Link to={to} className={`inline-flex items-center gap-2 group ${className}`}>
+        <img
+          src="/lumina-icon.png"
+          alt="Lumina AI Icon"
+          className="size-9 object-contain drop-shadow-sm transition-transform group-hover:scale-105"
+        />
+      </Link>
+    );
+  }
+
   return (
-    <Link to={to} className="flex items-center gap-2 group">
-      <div className="size-7 rounded-lg bg-gradient-to-br from-brand to-accent-cyan grid place-items-center shadow-sm shadow-brand/30">
-        <Sparkles className="size-4 text-white" strokeWidth={2.5} />
-      </div>
-      <span className="font-semibold tracking-tight text-[15px]">Lumina AI</span>
+    <Link to={to} className={`inline-flex items-center gap-3 group ${className}`}>
+      <img
+        src="/lumina-logo.png"
+        alt="Lumina AI Logo"
+        className="h-10 w-auto max-w-[170px] object-contain drop-shadow-sm transition-transform group-hover:scale-[1.02]"
+      />
+      {showSubtitle && (
+        <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-wider text-muted-foreground border-l border-border pl-2 leading-tight">
+          Sentiment<br />Intelligence
+        </span>
+      )}
     </Link>
   );
 }

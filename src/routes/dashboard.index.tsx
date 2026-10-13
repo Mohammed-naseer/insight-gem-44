@@ -3,7 +3,7 @@ import { DashboardTopbar } from "@/components/dashboard/topbar";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Loader2, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw, Camera, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
@@ -31,9 +31,18 @@ interface DashboardData {
   providerMetrics: { provider: string; avgConfidence: number }[];
 }
 
+interface VisionStatsData {
+  totalVisualAnalyses: number;
+  duplicateImageCount: number;
+  uniqueImageCount: number;
+  breakdown: Array<{ label: string; count: number; percentage: number }>;
+}
+
 interface ApiResponse { success: boolean; data: DashboardData }
+interface ApiVisionResponse { success: boolean; data: VisionStatsData }
 
 const DIST_COLORS = ["#22c55e", "#94a3b8", "#ef4444"];
+const VISION_COLORS = ["#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#3b82f6", "#64748b", "#10b981"];
 
 function SkeletonCard() {
   return (
@@ -47,13 +56,18 @@ function SkeletonCard() {
 
 function Page() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [visionStats, setVisionStats] = useState<VisionStatsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = async () => {
     setLoading(true);
     try {
-      const res = await api.get<ApiResponse>("/api/dashboard");
+      const [res, vRes] = await Promise.all([
+        api.get<ApiResponse>("/api/dashboard"),
+        api.get<ApiVisionResponse>("/api/vision/stats").catch(() => null),
+      ]);
       if (res.success) setData(res.data);
+      if (vRes && vRes.success) setVisionStats(vRes.data);
     } catch {
       // Keep existing data or null — UI shows empty state
     } finally {
@@ -233,6 +247,80 @@ function Page() {
               : <ActivityFeed limit={8} />
             }
           </div>
+        </div>
+
+        {/* ── Visual Customer Intelligence Module ────────────────────────── */}
+        <div className="p-6 rounded-xl bg-card ring-1 ring-border space-y-5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Camera className="size-5 text-accent-cyan" />
+              <h3 className="font-semibold tracking-tight">Visual Customer Intelligence</h3>
+              <span className="text-[10px] uppercase tracking-widest bg-accent-cyan/10 text-accent-cyan px-2 py-0.5 rounded-full font-semibold">
+                Computer Vision
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Product defect & packaging condition diagnostics
+            </p>
+          </div>
+
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            <div className="p-4 rounded-xl bg-muted/40 border border-border/80">
+              <span className="text-xs text-muted-foreground">Images Analyzed</span>
+              <p className="text-2xl font-semibold mt-1 tabular-nums">
+                {visionStats?.totalVisualAnalyses ?? 0}
+              </p>
+              <span className="text-[11px] text-muted-foreground">Total submissions</span>
+            </div>
+            <div className="p-4 rounded-xl bg-muted/40 border border-border/80">
+              <span className="text-xs text-muted-foreground">Unique Products</span>
+              <p className="text-2xl font-semibold mt-1 tabular-nums text-success">
+                {visionStats?.uniqueImageCount ?? 0}
+              </p>
+              <span className="text-[11px] text-muted-foreground">SHA-256 verified</span>
+            </div>
+            <div className="p-4 rounded-xl bg-muted/40 border border-border/80">
+              <span className="text-xs text-muted-foreground">Duplicate Uploads</span>
+              <p className="text-2xl font-semibold mt-1 tabular-nums text-warning">
+                {visionStats?.duplicateImageCount ?? 0}
+              </p>
+              <span className="text-[11px] text-muted-foreground">Perceptual / hash matches</span>
+            </div>
+            <div className="p-4 rounded-xl bg-muted/40 border border-border/80">
+              <span className="text-xs text-muted-foreground">Defect Detection Rate</span>
+              <p className="text-2xl font-semibold mt-1 tabular-nums text-primary">
+                {visionStats && visionStats.totalVisualAnalyses > 0
+                  ? `${Math.round(
+                      ((visionStats.totalVisualAnalyses - (visionStats.breakdown.find(b => b.label === "NORMAL")?.count || 0)) /
+                        visionStats.totalVisualAnalyses) *
+                        100
+                    )}%`
+                  : "0%"}
+              </p>
+              <span className="text-[11px] text-muted-foreground">Physical issues detected</span>
+            </div>
+          </div>
+
+          {visionStats && visionStats.totalVisualAnalyses > 0 ? (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-muted-foreground mb-3">Defect Distribution Breakdown</p>
+              <div className="h-52">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={visionStats.breakdown.filter(b => b.count > 0)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                    <XAxis dataKey="label" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                    <Bar dataKey="count" name="Images" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : (
+            <div className="py-6 text-center text-xs text-muted-foreground border border-dashed border-border rounded-xl">
+              Attach product photos in AI Analysis to populate live visual intelligence metrics.
+            </div>
+          )}
         </div>
 
       </div>

@@ -62,7 +62,7 @@ function Page() {
             {["CSV"].map((f) => (
               <button
                 key={f}
-                onClick={() => downloadCSV(monthly, "analytics-monthly")}
+                onClick={() => downloadCSV("analytics-monthly.csv", monthly as unknown as Record<string, string | number>[])}
                 className="ring-1 ring-border px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-muted flex items-center gap-1.5"
               >
                 <Download className="size-3.5" /> {f}

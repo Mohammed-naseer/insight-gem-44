@@ -22,6 +22,8 @@ import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard.reports'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard.products'
+import { Route as DashboardMultimodalRouteImport } from './routes/dashboard.multimodal'
+import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard.intelligence'
 import { Route as DashboardHistoryRouteImport } from './routes/dashboard.history'
 import { Route as DashboardApprovalRouteImport } from './routes/dashboard.approval'
 import { Route as DashboardAnalyticsRouteImport } from './routes/dashboard.analytics'
@@ -93,6 +95,16 @@ const DashboardProductsRoute = DashboardProductsRouteImport.update({
   path: '/products',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardMultimodalRoute = DashboardMultimodalRouteImport.update({
+  id: '/multimodal',
+  path: '/multimodal',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardIntelligenceRoute = DashboardIntelligenceRouteImport.update({
+  id: '/intelligence',
+  path: '/intelligence',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardHistoryRoute = DashboardHistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -133,6 +145,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/approval': typeof DashboardApprovalRoute
   '/dashboard/history': typeof DashboardHistoryRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/multimodal': typeof DashboardMultimodalRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -152,6 +166,8 @@ export interface FileRoutesByTo {
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/approval': typeof DashboardApprovalRoute
   '/dashboard/history': typeof DashboardHistoryRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/multimodal': typeof DashboardMultimodalRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -173,6 +189,8 @@ export interface FileRoutesById {
   '/dashboard/analytics': typeof DashboardAnalyticsRoute
   '/dashboard/approval': typeof DashboardApprovalRoute
   '/dashboard/history': typeof DashboardHistoryRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/multimodal': typeof DashboardMultimodalRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -195,6 +213,8 @@ export interface FileRouteTypes {
     | '/dashboard/analytics'
     | '/dashboard/approval'
     | '/dashboard/history'
+    | '/dashboard/intelligence'
+    | '/dashboard/multimodal'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -214,6 +234,8 @@ export interface FileRouteTypes {
     | '/dashboard/analytics'
     | '/dashboard/approval'
     | '/dashboard/history'
+    | '/dashboard/intelligence'
+    | '/dashboard/multimodal'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -234,6 +256,8 @@ export interface FileRouteTypes {
     | '/dashboard/analytics'
     | '/dashboard/approval'
     | '/dashboard/history'
+    | '/dashboard/intelligence'
+    | '/dashboard/multimodal'
     | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/settings'
@@ -345,6 +369,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProductsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/multimodal': {
+      id: '/dashboard/multimodal'
+      path: '/multimodal'
+      fullPath: '/dashboard/multimodal'
+      preLoaderRoute: typeof DashboardMultimodalRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/intelligence': {
+      id: '/dashboard/intelligence'
+      path: '/intelligence'
+      fullPath: '/dashboard/intelligence'
+      preLoaderRoute: typeof DashboardIntelligenceRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/history': {
       id: '/dashboard/history'
       path: '/history'
@@ -389,6 +427,8 @@ interface DashboardRouteChildren {
   DashboardAnalyticsRoute: typeof DashboardAnalyticsRoute
   DashboardApprovalRoute: typeof DashboardApprovalRoute
   DashboardHistoryRoute: typeof DashboardHistoryRoute
+  DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
+  DashboardMultimodalRoute: typeof DashboardMultimodalRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
@@ -402,6 +442,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAnalyticsRoute: DashboardAnalyticsRoute,
   DashboardApprovalRoute: DashboardApprovalRoute,
   DashboardHistoryRoute: DashboardHistoryRoute,
+  DashboardIntelligenceRoute: DashboardIntelligenceRoute,
+  DashboardMultimodalRoute: DashboardMultimodalRoute,
   DashboardProductsRoute: DashboardProductsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,

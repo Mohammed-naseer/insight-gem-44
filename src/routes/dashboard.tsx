@@ -19,9 +19,9 @@ export const Route = createFileRoute("/dashboard")({
 
 function DashboardLayout() {
   return (
-    <div className="min-h-dvh flex bg-background">
+    <div className="min-h-dvh flex bg-background" suppressHydrationWarning>
       <DashboardSidebar />
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col" suppressHydrationWarning>
         <Outlet />
       </div>
     </div>
